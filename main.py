@@ -1,115 +1,101 @@
 import os
-from dotenv import load_dotenv
-import queue
-import threading
-import pyaudio
+from pathlib import Path
+import tempfile
+import wave
+import numpy as np
+import sounddevice as sd
 import whisper
 from transformers import MarianMTModel, MarianTokenizer
 
-# --- Settings ---
-AUDIO_DEVICE_INDEX = 2   # set to your mic or OBS virtual audio device
-OUTPUT_FILE = "captions.txt"
-LANGUAGE = "es"  # input language = Spanish
-
-import shutil, sys
+# -----------------------------
+# 1️⃣ Ensure ffmpeg is visible
+# -----------------------------
+# Hardcoded for now.
 ffmpeg_path = r"C:\Users\Joseph Ruiz\scoop\apps\ffmpeg\current\bin"
-# # Try to find ffmpeg automatically
-# ffmpeg_path = shutil.which("ffmpeg")
+# if not ffmpeg_path and "FFMPEG_PATH" in os.environ:
+#     ffmpeg_path = os.environ["FFMPEG_PATH"]
 
-# # If not found, check if user set an env var
-# load_dotenv()
 # if not ffmpeg_path:
-#     ffmpeg_path = os.getenv("FFMPEG_PATH")
+#     sys.exit("ERROR: ffmpeg not found. Install it or set FFMPEG_PATH env var.")
 
-# # If still not found, fail gracefully
-# if not ffmpeg_path:
-#     sys.exit("ERROR: ffmpeg not found. Please install it or set FFMPEG_PATH env var.")
-
-# # Add ffmpeg's folder to PATH for Whisper subprocess calls
-# if os.path.dirname(ffmpeg_path) not in os.environ["PATH"].split(os.pathsep):
-os.environ["PATH"] += os.pathsep + os.path.dirname(ffmpeg_path)
+# ffmpeg_dir = os.path.dirname(ffmpeg_path)
+# if ffmpeg_dir not in os.environ["PATH"]:
+#     os.environ["PATH"] += os.pathsep + ffmpeg_dir
 
 print("Using ffmpeg at:", ffmpeg_path)
 
-# --- Load models ---
-print("Loading models...")
-asr_model = whisper.load_model("base")  # try "small" or "medium" if you want better accuracy
-translator_model_name = "Helsinki-NLP/opus-mt-es-en"
-tokenizer = MarianTokenizer.from_pretrained(translator_model_name)
-translator = MarianMTModel.from_pretrained(translator_model_name)
+# -----------------------------
+# 2️⃣ Load models
+# -----------------------------
+print("Loading Whisper model...")
+asr_model = whisper.load_model("small")  # small/medium/large depending on hardware
 
-# --- Translation helper ---
-def translate_spanish_to_english(text):
-    inputs = tokenizer([text], return_tensors="pt", padding=True)
-    outputs = translator.generate(**inputs)
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+print("Loading MarianMT translation model...")
+mt_model_name = "Helsinki-NLP/opus-mt-es-en"
+tokenizer = MarianTokenizer.from_pretrained(mt_model_name)
+mt_model = MarianMTModel.from_pretrained(mt_model_name)
 
-# --- Audio Capture ---
-audio_queue = queue.Queue()
+# -----------------------------
+# 3️⃣ Helper functions
+# -----------------------------
+def record_chunk(duration=5, fs=16000):
+    """Record audio from mic for a short duration and return temp WAV filename."""
+    print("Recording...")
+    audio = sd.rec(int(duration * fs), samplerate=fs, channels=1)
+    sd.wait()
+    audio = np.squeeze(audio)
 
-def audio_callback(in_data, frame_count, time_info, status):
-    audio_queue.put(in_data)
-    return (None, pyaudio.paContinue)
+    # Define project subdirectory
+    project_dir = Path(__file__).parent
+    audio_dir = project_dir / "recordings"
+    audio_dir.mkdir(exist_ok=True)
 
-def start_stream():
-    p = pyaudio.PyAudio()
-    stream = p.open(format=pyaudio.paInt16,
-                    channels=1,
-                    rate=16000,
-                    input=True,
-                    input_device_index=AUDIO_DEVICE_INDEX,
-                    frames_per_buffer=4096,
-                    stream_callback=audio_callback)
-    stream.start_stream()
-    return stream, p
+    # Save WAV file in subdirectory
+    tmp_file = audio_dir / "tmp_audio.wav"
 
-# --- Processing Thread ---
-def process_audio():
-    import numpy as np
-    import tempfile
-    import wave
-
-    while True:
-        # collect ~5 seconds of audio
-        frames = []
-        for _ in range(0, int(16000 / 4096 * 5)):
-            data = audio_queue.get()
-            frames.append(data)
-
-        # save temporary wav file
-        tmp_wav = tempfile.mktemp(suffix=".wav")
-        wf = wave.open(tmp_wav, 'wb')
+    # Write WAV file
+    with wave.open(str(tmp_file), "wb") as wf:
         wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(16000)
-        wf.writeframes(b''.join(frames))
-        wf.close()
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(fs)
+        wf.writeframes((audio * 32767).astype(np.int16).tobytes())
 
-        # run ASR
-        result = asr_model.transcribe(tmp_wav, language=LANGUAGE)
-        spanish_text = result["text"].strip()
-        if not spanish_text:
-            continue
+    print(f"WAV saved at: {tmp_file}")
+    return str(tmp_file)
 
-        # translate
-        english_text = translate_spanish_to_english(spanish_text)
-        print(f"[ES] {spanish_text}\n[EN] {english_text}\n")
+def translate_text(text):
+    """Translate Spanish text to English using MarianMT."""
+    batch = tokenizer([text], return_tensors="pt", padding=True)
+    gen = mt_model.generate(**batch)
+    translation = tokenizer.batch_decode(gen, skip_special_tokens=True)[0]
+    return translation
 
-        # update captions file for OBS
-        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+# -----------------------------
+# 4️⃣ Live loop
+# -----------------------------
+# Output file for OBS live captions
+obs_file = "live_translation.txt"
+
+print("Live translation started. Press Ctrl+C to stop.")
+
+try:
+    while True:
+        tmp_wav = record_chunk(duration=5)  # adjust duration for responsiveness
+        asr_result = asr_model.transcribe(tmp_wav, language="es")
+        spanish_text = asr_result["text"]
+        english_text = translate_text(spanish_text)
+
+        # Print to console
+        print(f"ES: {spanish_text}")
+        print(f"EN: {english_text}")
+        print("-" * 30)
+
+        # Write live translation to file for OBS
+        with open(obs_file, "w", encoding="utf-8") as f:
             f.write(english_text)
 
+        # Clean up temp file
         os.remove(tmp_wav)
 
-# --- Main ---
-if __name__ == "__main__":
-    stream, p = start_stream()
-    threading.Thread(target=process_audio, daemon=True).start()
-    print("🎤 Live translation started. Press Ctrl+C to stop.")
-    try:
-        while True:
-            pass
-    except KeyboardInterrupt:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+except KeyboardInterrupt:
+    print("\nStopped by user")
