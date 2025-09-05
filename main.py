@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import queue
 import threading
 import pyaudio
@@ -9,6 +10,26 @@ from transformers import MarianMTModel, MarianTokenizer
 AUDIO_DEVICE_INDEX = 2   # set to your mic or OBS virtual audio device
 OUTPUT_FILE = "captions.txt"
 LANGUAGE = "es"  # input language = Spanish
+
+import shutil, sys
+ffmpeg_path = r"C:\Users\Joseph Ruiz\scoop\apps\ffmpeg\current\bin"
+# # Try to find ffmpeg automatically
+# ffmpeg_path = shutil.which("ffmpeg")
+
+# # If not found, check if user set an env var
+# load_dotenv()
+# if not ffmpeg_path:
+#     ffmpeg_path = os.getenv("FFMPEG_PATH")
+
+# # If still not found, fail gracefully
+# if not ffmpeg_path:
+#     sys.exit("ERROR: ffmpeg not found. Please install it or set FFMPEG_PATH env var.")
+
+# # Add ffmpeg's folder to PATH for Whisper subprocess calls
+# if os.path.dirname(ffmpeg_path) not in os.environ["PATH"].split(os.pathsep):
+os.environ["PATH"] += os.pathsep + os.path.dirname(ffmpeg_path)
+
+print("Using ffmpeg at:", ffmpeg_path)
 
 # --- Load models ---
 print("Loading models...")
