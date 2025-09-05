@@ -10,19 +10,8 @@ from transformers import MarianMTModel, MarianTokenizer
 # -----------------------------
 # 1️⃣ Ensure ffmpeg is visible
 # -----------------------------
-# Hardcoded for now.
-ffmpeg_path = r"C:\Users\Joseph Ruiz\scoop\apps\ffmpeg\current\bin"
-# if not ffmpeg_path and "FFMPEG_PATH" in os.environ:
-#     ffmpeg_path = os.environ["FFMPEG_PATH"]
 
-# if not ffmpeg_path:
-#     sys.exit("ERROR: ffmpeg not found. Install it or set FFMPEG_PATH env var.")
 
-# ffmpeg_dir = os.path.dirname(ffmpeg_path)
-# if ffmpeg_dir not in os.environ["PATH"]:
-#     os.environ["PATH"] += os.pathsep + ffmpeg_dir
-
-print("Using ffmpeg at:", ffmpeg_path)
 
 # -----------------------------
 # 2️⃣ Load models
