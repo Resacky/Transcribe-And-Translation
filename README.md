@@ -20,3 +20,5 @@ This repository will be used as a POC WIP for containerizing and developing loca
     scoop install ffmpeg
     ```
     ref: https://github.com/openai/whisper
+
+    Afterwards, you will probably need to set up the env variables for that PATH.
