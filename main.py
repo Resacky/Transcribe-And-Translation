@@ -24,8 +24,8 @@ translation_log = TRANSLATION_DIR / f"session_{datetime.now().strftime('%Y%m%d_%
 # -----------------------------
 # Model setup
 # -----------------------------
-device = "metal"  # Apple Silicon GPU
-compute_type = "float16"  # float16 for speed, int8 for CPU fallback
+device = "cpu"
+compute_type = "int8"
 
 print("Loading faster-whisper model...")
 model = WhisperModel("large-v3", device=device, compute_type=compute_type)
