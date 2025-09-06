@@ -7,14 +7,11 @@ import sounddevice as sd
 import whisper
 from transformers import MarianMTModel, MarianTokenizer
 
-# -----------------------------
-# 1️⃣ Ensure ffmpeg is visible
-# -----------------------------
-
+PROJECT_DIR = Path(__file__).parent
 
 
 # -----------------------------
-# 2️⃣ Load models
+# Load models
 # -----------------------------
 print("Loading Whisper model...")
 asr_model = whisper.load_model("small")  # small/medium/large depending on hardware
@@ -25,7 +22,7 @@ tokenizer = MarianTokenizer.from_pretrained(mt_model_name)
 mt_model = MarianMTModel.from_pretrained(mt_model_name)
 
 # -----------------------------
-# 3️⃣ Helper functions
+# Helper functions
 # -----------------------------
 def record_chunk(duration=5, fs=16000):
     """Record audio from mic for a short duration and return temp WAV filename."""
@@ -35,8 +32,7 @@ def record_chunk(duration=5, fs=16000):
     audio = np.squeeze(audio)
 
     # Define project subdirectory
-    project_dir = Path(__file__).parent
-    audio_dir = project_dir / "recordings"
+    audio_dir = PROJECT_DIR / "recordings"
     audio_dir.mkdir(exist_ok=True)
 
     # Save WAV file in subdirectory
@@ -60,10 +56,12 @@ def translate_text(text):
     return translation
 
 # -----------------------------
-# 4️⃣ Live loop
+# Live loop
 # -----------------------------
 # Output file for OBS live captions
-obs_file = "live_translation.txt"
+translation_dir = PROJECT_DIR / "translation"
+translation_dir.mkdir(exist_ok=True)
+obs_file = translation_dir / "live_translation.txt"
 
 print("Live translation started. Press Ctrl+C to stop.")
 
@@ -83,8 +81,7 @@ try:
         with open(obs_file, "w", encoding="utf-8") as f:
             f.write(english_text)
 
-        # Clean up temp file
-        os.remove(tmp_wav)
+        # os.remove(tmp_wav)
 
 except KeyboardInterrupt:
     print("\nStopped by user")
